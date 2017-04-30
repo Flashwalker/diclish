@@ -343,9 +343,9 @@ GETPOST(){
   ptxt=$(echo -n "$post"|jq -r '.text')
   if [[ "$pguid" ]]; then
     echo "$ptxt"
-    if (($verbose)); then
+    #if (($verbose)); then
         echo -e "\n\e[0;36m""post url: $posturl""\e[m"
-    fi
+    #fi
   else
     echo -e '\E[37;31m'"\033[1m[error]\033[0m" "No post returned, please try again or give up."
         (($verbose)) && echo -e "\e[0;36m""Exiting.""\e[m"
@@ -386,11 +386,12 @@ POST(){
   pguid=$(echo -n "$post"|jq -r '.guid')
   if [[ "$pguid" ]]; then
     if ! (($quiet)); then
-        echo -e '\E[37;32m'"\033[1m[success]\033[0m" "Message posted at ${pod}/posts/$pguid"
+        # echo -e '\E[37;32m'"\033[1m[success]\033[0m" "Message posted at ${pod}/posts/$pguid"
+        echo -e '\E[37;32m'"\033[1m[success]\033[0m" "Message posted"
     fi
-    if (($verbose)); then
+    # if (($verbose)); then
       echo -e "\e[0;36m""post url: ${pod}/posts/$pguid""\e[m"
-    fi
+    # fi
     /bin/rm -f "$postfile" "$message"
   else
     echo -e '\E[37;31m'"\033[1m[error]\033[0m" "No post guid returned, please try again or give up."
