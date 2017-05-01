@@ -5,6 +5,7 @@
 * [curl](https://curl.haxx.se/) (ubuntu updates/main, security/main, /main repos has this)
 * [jq](https://stedolan.github.io/jq/) (ubuntu backports/universe, /universe repos has this)
 * grep, sed, awk, tr, mkdir, mktemp, rm, wc (normally GNU/linux has this)
+
 ### Usage:
 
 Run `diclish -h` for help.
