@@ -56,17 +56,16 @@ USAGE(){
     Set authentification to config file:
       $exec -vs
     Post message:
-      $exec -vp
-      $exec -a public -p
-     or just:
       $exec
+      $exec -vp
+      $exec -a 5173 -p
     Post message from stdin:
       $exec <<<"Hello world!"
-     or:
+      echo "Hello world!" | $exec
       cat myPost.md | $exec
-    Rad post by id:
+    Read post by id:
       $exec -g fb2c9e20b2270134e39f451eccdf6dc9
-      $exec -qvg 123456
+      $exec -qg 123456
 EOF
 }
 
@@ -350,9 +349,9 @@ GETPOST(){
   ptxt=$(echo -n "$post"|jq -r '.text')
   if [[ "$pguid" ]]; then
     echo "$ptxt"
-    #if (($verbose)); then
+    if ! (($quiet)); then
         echo -e "\n\e[0;36m""post url: $posturl""\e[m"
-    #fi
+    fi
   else
     echo -e '\E[37;31m'"\033[1m[error]\033[0m" "No post returned, please try again or give up."
         (($verbose)) && echo -e "\e[0;36m""Exiting.""\e[m"
@@ -396,10 +395,8 @@ POST(){
     if ! (($quiet)); then
         # echo -e '\E[37;32m'"\033[1m[success]\033[0m" "Message posted at ${pod}/posts/$pguid"
         echo -e '\E[37;32m'"\033[1m[success]\033[0m" "Message posted"
+        echo -e "\e[0;36m""post url: ${pod}/posts/$pguid""\e[m"
     fi
-    # if (($verbose)); then
-      echo -e "\e[0;36m""post url: ${pod}/posts/$pguid""\e[m"
-    # fi
     /bin/rm -f "$postfile" "$message"
   else
     echo -e '\E[37;31m'"\033[1m[error]\033[0m" "No post guid returned, please try again or give up."
