@@ -2,7 +2,7 @@
 #
 # diclish - Diaspora* cli bash script.
 # Version 1.0
-# Source: https://notabug.org/uzver/diclish.git
+# Source: https://notabug.org/uzver/diclish
 #
 # Based on:
 # podwrapper Version 1.5.4
@@ -375,8 +375,8 @@ POST(){
   else
       $EDITOR "$message"
   fi
-  ## Remove leading blank lines
-  sed -i '/./,$!d' "$message"
+  ## Remove leading blank lines & trailing double spaces on none blank lines
+  sed -i '/./,$!d; s/\(.\+\)[[:space:]]\{2\}$/\1/g' "$message"
 
   msglength=$(cat "$message"|wc -m)
   if ! (($msglength)); then
