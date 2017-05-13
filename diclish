@@ -79,7 +79,7 @@ CONFIG(){
     (($custconfig)) && dotdir=$(dirname "$config")
   else
     mkdir -p "$dotdir" && chmod 700 "$dotdir"
-    echo -e '\E[37;34m'"\033[1m[notice]\033[0m No config file found! Let's create one."
+    echo -e '\E[37;34m'"\033[1m[notice]\033[0m No config file found! Let's create one"
     read -p "What is your Diaspora* handle? (user@pod.example.com): " handle
     if ! (($sslsetted)); then
       IFSSL(){
@@ -93,7 +93,7 @@ CONFIG(){
           ssl=1
           pod="https://${handle##*@}"
       else
-          echo "Response not valid, please answer y or n."
+          echo "Response not valid, please answer y or n"
           IFSSL
       fi
     fi
@@ -108,7 +108,7 @@ CONFIG(){
     echo "1) Public"
     echo "2) Private"
     echo ""
-    echo "Or, you can enter the specific aspect id number that you want as default."
+    echo "Or, you can enter the specific aspect id number that you want as default"
     echo ""
     read -p "Preference: (1/2) " aspresponse
     if [[ "$aspresponse" == 1 ]]
@@ -197,7 +197,7 @@ REREGTOKENS(){
   [[ "$csrf" ]] && sed -i '/csrf=/d' "$config"; echo "csrf=\"$csrf\"">>"$config"
   # /bin/rm -f "$tempfile"
   if ! [[ "$password" ]]; then
-	echo -e '\E[37;34m'"\033[1m[notice]\033[0m" "This will be the only time you will be asked for your password."
+	echo -e '\E[37;34m'"\033[1m[notice]\033[0m" "This will be the only time you will be asked for your password"
 	echo "Your password will be stored plain in config file"
 	PASSWORD
     ## Store  password in config file:
@@ -221,11 +221,11 @@ REREGTOKENS(){
   # VALIDTOKEN # Infinity retries
   if [[ "$accesstoken" ]]; then
 	  if ! (($quiet)); then
-		echo -e '\E[37;32m'"\033[1m[success]\033[0m" "Config updated!"
+		echo -e '\E[37;32m'"\033[1m[success]\033[0m" "Config updated"
 	  fi
 	else
-	  echo -e '\E[37;31m'"\033[1m[error]\033[0m" "Did not recieve an access token."
-	  (($verbose)) && echo -e "\e[0;36m""Exiting.""\e[m"
+	  echo -e '\E[37;31m'"\033[1m[error]\033[0m" "Did not recieve an access token"
+	  (($verbose)) && echo -e "\e[0;36m""Exiting""\e[m"
 	  exit 1
   fi
 }
@@ -255,11 +255,11 @@ VALIDTOKEN(){
   user=$(echo "$tmpauth"|awk -F'sub":"' '{print $2}'|awk -F'"' '{print $1}')
   unset tmpauth
   if ! [[ "$user" ]]; then
-    echo -e '\E[37;31m'"\033[1m[error]\033[0m" "Error validating login token.\nCheck/set your auth and try again."
-    (($verbose)) && echo -e "\e[0;36m""Exiting.""\e[m"
+    echo -e '\E[37;31m'"\033[1m[error]\033[0m" "Error validating login token.\nCheck/set your auth and try again"
+    (($verbose)) && echo -e "\e[0;36m""Exiting""\e[m"
   else
     if ! (($quiet)); then
-      echo -e '\E[37;32m'"\033[1m[success]\033[0m" "Token valid for user: $user."
+      (($verbose)) && echo -e '\E[37;32m'"\033[1m[success]\033[0m" "Token valid for user: $user"
       (($verbose)) && echo -e "\e[0;36""muser = $user""\e[m\n"
     fi
   fi
@@ -291,7 +291,7 @@ REGISTER(){
       echo "csrf=\"$csrf\"">>"$config"
       /bin/rm -f "$tempfile"
       if ! [[ "$password" ]]; then
-        echo -e '\E[37;34m'"\033[1m[notice]\033[0m" "This will be the only time you will be asked for your password."
+        echo -e '\E[37;34m'"\033[1m[notice]\033[0m" "This will be the only time you will be asked for your password"
         echo "Your password will be stored plain in config file"
         PASSWORD
       fi
@@ -314,17 +314,17 @@ REGISTER(){
       VALIDTOKEN
       if [[ "$accesstoken" ]]; then
           if ! (($quiet)); then
-            echo -e '\E[37;32m'"\033[1m[success]\033[0m" "Config updated!"
+            echo -e '\E[37;32m'"\033[1m[success]\033[0m" "Config updated"
           fi
         else
-          echo -e '\E[37;31m'"\033[1m[error]\033[0m" "Did not recieve an access token."
-          (($verbose)) && echo -e "\e[0;36m""Exiting.""\e[m"
+          echo -e '\E[37;31m'"\033[1m[error]\033[0m" "Did not recieve an access token"
+          (($verbose)) && echo -e "\e[0;36m""Exiting""\e[m"
           exit 1
       fi
       unset csrf authtoken authcode accesstoken
   else
-    echo -e '\E[37;31m'"\033[1m[error]\033[0m" "Script appears to be registered previously."
-    (($verbose)) && echo -e "\e[0;36m""Exiting.""\e[m"
+    echo -e '\E[37;31m'"\033[1m[error]\033[0m" "Script appears to be registered previously"
+    (($verbose)) && echo -e "\e[0;36m""Exiting""\e[m"
     exit 1
   fi
 }
@@ -335,13 +335,14 @@ GETPOST(){
   unset password csrf authtoken authcode accesstoken
   error=$(echo "$post"|grep '{"error')
   if [[ "$error" ]]; then
-    echo -e '\E[37;31m'"\033[1m[error]\033[0m" "Did not recieve post."
+    echo -e '\E[37;31m'"\033[1m[error]\033[0m" "Did not recieve post"
     if (($verbose)); then
       echo -e "\e[0;36m""$error""\e[m"
-      echo -e "\e[0;36m""Exiting.""\e[m"
+      echo -e "\e[0;36m""Exiting""\e[m"
     fi
     exit 1
   fi
+  # pid=$(echo -n "$post"|jq -r '.id')
   pguid=$(echo -n "$post"|jq -r '.guid')
   posturl="${pod}/posts/$pguid"
   author=$(echo -n "$post"|jq -r '.author.name')
@@ -353,8 +354,8 @@ GETPOST(){
         echo -e "\n\e[0;36m""post url: $posturl""\e[m"
     fi
   else
-    echo -e '\E[37;31m'"\033[1m[error]\033[0m" "No post returned, please try again or give up."
-        (($verbose)) && echo -e "\e[0;36m""Exiting.""\e[m"
+    echo -e '\E[37;31m'"\033[1m[error]\033[0m" "No post returned, please try again or give up"
+        (($verbose)) && echo -e "\e[0;36m""Exiting""\e[m"
         exit 1
   fi
 }
@@ -380,31 +381,33 @@ POST(){
 
   msglength=$(cat "$message"|wc -m)
   if ! (($msglength)); then
-    echo -e '\E[37;31m'"\033[1m[error]\033[0m" "The message is empty. Not posting message."
+    echo -e '\E[37;31m'"\033[1m[error]\033[0m" "The message is empty. Not posting message"
     echo "Not deleting the file \"$message\" in case it is not empty"
     /bin/rm -f "$postfile"
-    (($verbose)) && echo -e "\e[0;36m""Exiting.""\e[m"
+    (($verbose)) && echo -e "\e[0;36m""Exiting""\e[m"
     exit 1
   fi
   cat "$message"|sed 's/\\/\\\\/g; s/\"/\\"/g; s/\($\)/\1\\r\\n/g'|tr -d "\n"|sed 's/\\r\\n$//'>>"$postfile"
   echo -n "$jsonend">>"$postfile"
   post=$(curl -ks -H "User-Agent: $useragent" -H "Authorization: Bearer $accesstoken" -H "X-CSRF-TOKEN: $authtoken" -H "Content-Type: application/json" -H 'Accept: application/json' -X POST -d @"$postfile" "${pod}"/status_messages --cookie-jar "$cookie" --cookie "$cookie")
   unset password csrf authtoken authcode accesstoken
+  pid=$(echo -n "$post"|jq -r '.id')
   pguid=$(echo -n "$post"|jq -r '.guid')
   if [[ "$pguid" ]]; then
     if ! (($quiet)); then
         # echo -e '\E[37;32m'"\033[1m[success]\033[0m" "Message posted at ${pod}/posts/$pguid"
-        echo -e '\E[37;32m'"\033[1m[success]\033[0m" "Message posted"
-        echo -e "\e[0;36m""post url: ${pod}/posts/$pguid""\e[m"
+        echo -e '\E[37;32m'"\033[1m[success]\033[0m" "Message "$pid" posted"
+        echo -en "\e[0;36m""post url: ""\e[m"
     fi
+    echo -e "\e[0;36m""${pod}/posts/$pguid""\e[m"
     /bin/rm -f "$postfile" "$message"
   else
-    echo -e '\E[37;31m'"\033[1m[error]\033[0m" "No post guid returned, please try again or give up."
+    echo -e '\E[37;31m'"\033[1m[error]\033[0m" "No post guid returned, please try again or give up"
     echo "Message should still be saved in the file $message"
     /bin/rm -f "$postfile"
     if (($verbose)); then
       echo -e "\e[0;36m""$post""\e[m"
-      echo -e "\e[0;36m""Exiting.""\e[m"
+      echo -e "\e[0;36m""Exiting""\e[m"
     fi
     exit 1
   fi
@@ -522,6 +525,7 @@ fi
 exit 0
 
 ### TODO:
+# succes pid
 # inline auth
 # message size limit (bash var)
 # use keyring
@@ -536,3 +540,4 @@ exit 0
 # debug
 # version option
 # more errors handle
+# >&2
