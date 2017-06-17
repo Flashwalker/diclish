@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # diclish - Diaspora* cli bash script.
-# Version 1.0
+# Version 1.2
 # Source: https://notabug.org/uzver/diclish
 #
 # Based on:
@@ -14,14 +14,14 @@
 # https://kentshikama.com/posts/6c4b0ff01c090133da7b04015765ae01
 # https://kentshikama.com/posts/68f70c801c0d0133da7b04015765ae01
 #
-#
 # License: WTFPL2 http://wtfpl2.com/
 # uzver(at)protonmail.ch
 #
-# Deps: curl, jq, grep, sed, awk, tr, mkdir, mktemp, rm, wc
+# Deps: curl, jq, grep, sed, awk, tr, mkdir, mktemp, rm, wc, which
 
-
-dotdir="${HOME}/.diclish"
+thispath="$(realpath $0)"
+thisdir="$(dirname "$thispath")"
+dotdir=~/'.diclish'
 verbose=0
 ssl=1
 useragent='Mozilla/5.0 (Windows NT 6.1; rv:41.0) Gecko/20100101 Firefox/41.0'
@@ -36,17 +36,18 @@ USAGE(){
   USAGE: $exec [OPTIONS] [<<<"MESSAGE"]
 
   OPTIONS:
-    -a ASPECT            Specify aspect (public, all, or aspect id number)
+    -a aspect            Specify aspect (public, all, or aspect id number)
     -c config            Specify config file
-                          (you can use different configs for different accounts)
+                          (use different configs for different accounts)
+    -d config            Specify config file and set it as default auth
     -D                   Delete config and cookie files
-    -g ID                Get post of given ID
+    -g id|guid           Get post of given id or guid
     -h, --help           Show this help
     -i                   Post from stdin
     -p                   Post message
-    -q                   Less verbose successful printing
+    -q                   Less verbose printing
     -r                   Revalidate login token
-    -s                   Set authentification
+    -s                   Set new authentification
                           (register script, save login password)
     -v                   Verbose mode
     
@@ -55,31 +56,63 @@ USAGE(){
   EXAMPLES:
     Set authentification to config file:
       $exec -vs
+     or to custom place:
+      $exec -vc myConfig -s   # save in "$dotdir"
+      $exec -vc ~/myConfig -s   # save in home directory
+     or to custom place and set it default:
+      $exec -vd myNewDefaultConfig -s   # save in "$dotdir"
+      $exec -vd ~/myNewDefaultConfig -s   # save in home directory
+
     Post message:
       $exec
       $exec -vp
       $exec -a 5173 -p
+      $exec -c myConfig   # with custom config
+      $exec -d myNewDefaultConfig   # with custom config & set it default
+
     Post message from stdin:
       $exec <<<"Hello world!"
       echo "Hello world!" | $exec
       cat myPost.md | $exec
-    Read post by id:
+
+    Get post by id:
       $exec -g fb2c9e20b2270134e39f451eccdf6dc9
       $exec -qg 123456
+      $exec -c myConfig -g 123456   # with custom config
+      $exec -d myNewDefaultConfig -g 123456   # with custom config & set it default
 EOF
 }
 
 CONFIG(){
   # Check for config file and create it if it does not exist
-  if ! (($custconfig)); then
-    [[ -f "${dotdir}/defaultconfig" ]] && source "${dotdir}/defaultconfig"
+  if ! (($custconfig)) && ! (($setnew)); then
+    confdir="$dotdir"
+    [[ -f "${confdir}/defaultconfig" ]] && source "${confdir}/defaultconfig"
+  else
+    ! (($quiet)) && (($verbose)) && [[ $config ]] && echo -e "\e[0;36m""Using config: $config""\e[m"
+    [[ -f "$config" ]] && confdir=$(dirname "$config")
+    [[ -d "$confdir" ]] || confdir="$dotdir"
+    if [[ -f "$config" ]]; then
+      true
+    else
+      if [[ -f "${confdir}/$config" ]]; then
+        config="${confdir}/$config"
+      elif [[ -f "${confdir}/${config}.config" ]]; then
+      config="${confdir}/${config}.config"
+      fi
+    fi
   fi
+
   if [[ -f "$config" ]]; then
     ! (($quiet)) && (($verbose)) && echo -e "\e[0;36m""Using config: $config""\e[m"
-    (($custconfig)) && dotdir=$(dirname "$config")
+    # (($custconfig)) && confdir=$(dirname "$config")
+    if (($setdefconf)); then
+      ! (($quiet)) && (($verbose)) && echo -e "\e[0;36m""Setting default config: $config""\e[m"
+      echo "config=\"$config\"">"${confdir}/defaultconfig" && [[ -f "${confdir}/defaultconfig" ]] && chmod 600 "${confdir}/defaultconfig"
+    fi
   else
-    mkdir -p "$dotdir" && chmod 700 "$dotdir"
-    echo -e '\E[37;34m'"\033[1m[notice]\033[0m No config file found! Let's create one"
+    mkdir -p "$confdir" && chmod 700 "$confdir"
+    echo -e '\E[37;34m'"\033[1m[notice]\033[0m Creating new config file:"
     read -p "What is your Diaspora* handle? (user@pod.example.com): " handle
     if ! (($sslsetted)); then
       IFSSL(){
@@ -108,7 +141,7 @@ CONFIG(){
     echo "1) Public"
     echo "2) Private"
     echo ""
-    echo "Or, you can enter the specific aspect id number that you want as default"
+    echo "Or, you can enter the specific aspect id number that you want to use as default"
     echo ""
     read -p "Preference: (1/2) " aspresponse
     if [[ "$aspresponse" == 1 ]]
@@ -121,9 +154,22 @@ CONFIG(){
         aspect="$aspresponse"
     fi
     if ! (($custconfig)); then
-      config="${dotdir}/${handle}.config"
-      echo "config=\"$config\"">>"${dotdir}/defaultconfig"
+      config="${confdir}/${handle}.config"
     fi
+
+    source "$config"
+    if [[ "$clientname" ]]; then
+      echo -e '\E[37;31m'"\033[1m[error]\033[0m" "Script appears to be registered previously" >&2
+      echo "Use -D option to delete auth and then -s to try again" >&2
+      (($verbose)) && echo -e "\e[0;36m""Exiting""\e[m"
+      exit 1
+    fi
+
+    if [[ ! -f "${confdir}/defaultconfig" || "$(wc -m "${confdir}/defaultconfig"|cut -d ' ' -f 1)" == 0 ]] || (($setdefconf)); then
+      ! (($quiet)) && (($verbose)) && echo -e "\e[0;36m""Setting default config: $config""\e[m"
+      echo "config=\"$config\"">"${confdir}/defaultconfig" && [[ -f "${confdir}/defaultconfig" ]] && chmod 600 "${confdir}/defaultconfig"
+    fi
+    cookie="${handle}.cookie"
 {
 cat << EOF
 pod="$pod"
@@ -131,12 +177,32 @@ username="$username"
 handle="$handle"
 aspect="$aspect"
 useragent="$useragent"
+cookie="\${handle}.cookie"
 EOF
 }>"$config"
-    chmod 600 "$config"
+    [[ -f "$config" ]] && chmod 600 "$config"
     if ! (($quiet)) && (($verbose)); then
       echo -e "\e[0;36m""These variables have been saved to ${config}:\n"; cat "$config"; echo -e "\e[m"
     fi
+    [[ -f "$config" ]] && chmod 600 "$config"
+    if ! (($quiet)) && (($verbose)); then
+      echo -e "\e[0;36m""These variables have been saved to ${config}:""\e[m"
+      echo -e "\e[0;36m"; cat "$config"; echo -e "\e[m"
+    fi
+  fi
+  source "$config"
+  [[ -f "${confdir}/${handle}.cookie" ]] || (touch "${confdir}/${handle}.cookie" && chmod 600 "${confdir}/${handle}.cookie")
+
+  if [[ "$(which jq >& /dev/null; echo $?)" == 0 ]]; then
+      jq="jq"
+  elif [[ -f ~/"bin/jq" ]]; then
+      jq=~/"bin/jq"
+  elif [[  -f "${thisdir}/jq" ]]; then
+      jq="jq"
+  elif [[ -f "${confdir}/jq" ]]; then
+        ="jq"
+  elif [[ -f "${dotdir}/jq" ]]; then
+      jq="jq"
   fi
 }
 
@@ -162,34 +228,41 @@ fi
 TOKENS(){
   CONFIG
   source "$config" && unset password
-  cookie="${dotdir}/${handle}.cookie"
-  [[ -f "$cookie" ]] || (touch "$cookie" && chmod 600 "$cookie")
-  tempauth=$(curl -ks -H "User-Agent: $useragent" -d "grant_type=authorization_code&client_id=${clientid}&client_secret=${clientsecret}&redirect_uri=${pod}/&code=${authcode}" "${pod}"/api/openid_connect/access_tokens --cookie-jar "$cookie" --cookie "$cookie")
-  sed -i '/accesstoken=/d' "$config"; 
-  accesstoken=$(echo "$tempauth"|awk -F'access_token":"' '{print $2}'|awk -F'"' '{print $1}') && echo "accesstoken=\"$accesstoken\"">>"$config"
-  ! (($quiet)) && (($verbose)) && echo -e "\e[0;36""maccesstoken = $accesstoken""\e[m\n"
-  sed -i '/idtoken=/d' "$config"; 
-  idtoken=$(echo "$tempauth"|awk -F'id_token":"' '{print $2}'|awk -F'"' '{print $1}') && echo "idtoken=\"$idtoken\"">>"$config"
+  # cookie="${confdir}/${handle}.cookie"
+  # [[ -f "$cookie" ]] || (touch "$cookie" && chmod 600 "$cookie")
+  local tempauth=$(curl -ksS \
+    -H "User-Agent: $useragent" \
+    -d "grant_type=authorization_code&client_id=${clientid}&client_secret=${clientsecret}&redirect_uri=${pod}/&code=${authcode}" \
+    "${pod}"/api/openid_connect/access_tokens \
+    --cookie-jar "${confdir}/$cookie" --cookie "${confdir}/$cookie")
+  sed -i '/accesstoken=/d' "$config"
+  accesstoken=$(echo "$tempauth" | awk -F'access_token":"' '{print $2}' | awk -F'"' '{print $1}') && echo "accesstoken=\"$accesstoken\"">>"$config"
+  ! (($quiet)) && (($verbose)) && echo -e "\e[0;36m""accesstoken = $accesstoken""\e[m\n"
+  sed -i '/idtoken=/d' "$config"
+  idtoken=$(echo "$tempauth" | awk -F'id_token":"' '{print $2}' | awk -F'"' '{print $1}') && echo "idtoken=\"$idtoken\"">>"$config"
   ! (($quiet)) && (($verbose)) && echo -e "\e[0;36m""idtoken = $idtoken""\e[m\n"
   unset tempauth
-  unset csrf authtoken authcode accesstoken
+  unset csrf authtoken authcode accesstoken idtoken
 }
 
 REREGTOKENS(){
   CONFIG
   source "$config"
-  cookie="${dotdir}/${handle}.cookie"
-  [[ -f "$cookie" ]] || (touch "$cookie" && chmod 600 "$cookie")
+  # cookie="${confdir}/${handle}.cookie"
+  # [[ -f "$cookie" ]] || (touch "$cookie" && chmod 600 "$cookie")
   # tempfile=$(mktemp /tmp/pwtemp.XXXXXX)
   # chmod 600 "$tempfile"
-  # curl -ks -H "User-Agent: $useragent" "${pod}"/api/openid_connect/clients -d "redirect_uris[]=${pod}/&client_name=$clientname" >"$tempfile"
+  # curl -ksS -H "User-Agent: $useragent" "${pod}"/api/openid_connect/clients -d "redirect_uris[]=${pod}/&client_name=$clientname" >"$tempfile"
   # clientid=$(cat "$tempfile" | awk -F'client_id":"' '{print $2}' | awk -F'"' '{print $1}')
   # clientsecret=$(cat "$tempfile" | awk -F'client_secret":"' '{print $2}' | awk -F'"' '{print $1}')
   # if ! (($quiet)) && (($verbose)); then
 	# echo -e "\e[0;36m""clientid = $clientid""\e[m\n"
 	# echo -e "\e[0;36m""clientsecret = $clientsecret""\e[m\n"
   # fi
-  csrf=$(curl -ks -H "User-Agent: $useragent" -L "${pod}"/api/openid_connect/authorizations/new?client_id=${clientid}\&redirect_uri=${pod}/\&response_type=code\&scope=openid%20read%20write\&nonce=hi\&state=hi --cookie-jar "$cookie"|tr '\n' ' '|awk -F'block-form' '{print $2}'|awk -F'authenticity_token" value="' '{print $2}'|awk -F'"' '{print $1}')
+  csrf=$(curl -ksS -L \
+    -H "User-Agent: $useragent" \
+    "${pod}"/api/openid_connect/authorizations/new?client_id="${clientid}"\&redirect_uri="${pod}"/\&response_type=code\&scope=openid%20read%20write\&nonce=hi\&state=hi \
+    --cookie-jar "${confdir}/$cookie" | tr '\n' ' ' | awk -F'block-form' '{print $2}' | awk -F'authenticity_token" value="' '{print $2}' | awk -F'"' '{print $1}')
   ! (($quiet)) && (($verbose)) && echo -e "\e[0;36m""csrf = $csrf""\e[m\n"
   # [[ "$clientname" ]] && sed -i '/clientname=/d' "$config"; echo "clientname=\"$clientname\"">>"$config"
   # [[ "$clientid" ]] && sed -i '/clientid=/d' "$config"; echo "clientid=\"$clientid\"">>"$config"
@@ -208,9 +281,19 @@ REREGTOKENS(){
     fi
   fi
   #'
-  authtoken=$(curl -ks -H "User-Agent: $useragent" -L -H "X-CSRF-TOKEN: $csrf" -d "user[username]=${username}&user[password]=${password}&user[remember_me]=1" "${pod}"/users/sign_in --cookie-jar "$cookie" --cookie "$cookie"|tr '\n' ' '|awk -F'authenticity_token" value="' '{print $2}'|awk -F'"' '{print $1}')
+  authtoken=$(curl -ksS -L \
+    -H "User-Agent: $useragent" \
+    -H "X-CSRF-TOKEN: $csrf" \
+    -d "user[username]=${username}&user[password]=${password}&user[remember_me]=1" \
+    "${pod}"/users/sign_in \
+    --cookie-jar "${confdir}/$cookie" --cookie "${confdir}/$cookie" | tr '\n' ' ' | awk -F'authenticity_token" value="' '{print $2}' | awk -F'"' '{print $1}')
   ! (($quiet)) && (($verbose)) && echo -e "\e[0;36m""authtoken = $authtoken""\e[m\n"
-  authcode=$(curl -ks -H "User-Agent: $useragent" -H "X-CSRF-TOKEN: $authtoken" -d "approve=true" "${pod}"/api/openid_connect/authorizations --cookie-jar "$cookie" --cookie "$cookie"|awk -F'code=' '{print $2}'|awk -F'"' '{print $1}'|awk -F'&' '{print $1}')
+  authcode=$(curl -ksS \
+    -H "User-Agent: $useragent" \
+    -H "X-CSRF-TOKEN: $authtoken" \
+    -d "approve=true" \
+    "${pod}"/api/openid_connect/authorizations \
+    --cookie-jar "${confdir}/$cookie" --cookie "${confdir}/$cookie" | awk -F'code=' '{print $2}' | awk -F'"' '{print $1}' | awk -F'&' '{print $1}')
   ! (($quiet)) && (($verbose)) && echo -e "\e[0;36m""authcode = $authcode""\e[m\n"
   [[ "$authtoken" ]] && sed -i '/authtoken=/d' "$config"; echo "authtoken=\"$authtoken\"">>"$config"
   [[ "$authcode" ]] && sed -i '/authcode=/d' "$config"; echo "authcode=\"$authcode\"">>"$config"
@@ -221,10 +304,10 @@ REREGTOKENS(){
   # VALIDTOKEN # Infinity retries
   if [[ "$accesstoken" ]]; then
 	  if ! (($quiet)); then
-		echo -e '\E[37;32m'"\033[1m[success]\033[0m" "Config updated"
+		(($verbose)) && echo -e '\E[37;32m'"\033[1m[success]\033[0m" "Config updated"
 	  fi
 	else
-	  echo -e '\E[37;31m'"\033[1m[error]\033[0m" "Did not recieve an access token"
+	  echo -e '\E[37;31m'"\033[1m[error]\033[0m" "Did not recieve an access token" >&2
 	  (($verbose)) && echo -e "\e[0;36m""Exiting""\e[m"
 	  exit 1
   fi
@@ -233,29 +316,37 @@ REREGTOKENS(){
 VALIDTOKEN(){
   CONFIG
   source "$config" && unset password
-  cookie="${dotdir}/${handle}.cookie"
-  [[ -f "$cookie" ]] || (touch "$cookie" && chmod 600 "$cookie")
+  # cookie="${confdir}/${handle}.cookie"
+  # [[ -f "$cookie" ]] || (touch "$cookie" && chmod 600 "$cookie")
   if ! (($quiet)) && (($verbose)); then
-    echo -e "\e[0;36m""Validating login tokens""\e[m"
+    echo -e "\e[0;36m""Validating login tokens...""\e[m"
   fi
-  tmpauth=$(curl -ks -H "User-Agent: $useragent" -H "Authorization: Bearer $accesstoken" "${pod}"/api/openid_connect/user_info)
+  local tmpauth=$(curl -ksS \
+    -H "User-Agent: $useragent" \
+    -H "Authorization: Bearer $accesstoken" \
+    "${pod}"/api/openid_connect/user_info)
 
-  if [[ "$(echo "$tmpauth"|grep error)" ]]; then
+  if [[ "$(echo "$tmpauth" | grep error)" ]]; then
     if ! (($quiet)); then
-      echo -e '\E[37;31m'"\033[1m[error]\033[0m" "Token not valid"
-      (($verbose)) && echo -e "\e[0;36""m$(echo -n "$tmpauth"|jq -r '.error_description')""\e[m"
-      echo -e "Requesting new one..."
+      # echo -e '\E[37;31m'"\033[1m[error]\033[0m" "Token not valid"
+      echo -e '\E[37;32m'"\033[1m[warning]\033[0m" "Token not valid" >&2
+      (($verbose)) && echo -e "\e[0;36""m$(echo -n "$tmpauth" | "$jq" -r '.error_description')""\e[m" >&2
+      echo -e "Requesting new one..." >&2
     fi
     # sed -i '/accesstoken=/d' "$config"
     # sed -i '/idtoken=/d' "$config"
+    unset tmpauth
     REREGTOKENS
-    tmpauth=$(curl -ks -H "User-Agent: $useragent" -H "Authorization: Bearer $accesstoken" "${pod}"/api/openid_connect/user_info)
+    local tmpauth=$(curl -ksS \
+      -H "User-Agent: $useragent" \
+      -H "Authorization: Bearer $accesstoken" \
+      "${pod}"/api/openid_connect/user_info)
   fi
   source "$config" && unset password
-  user=$(echo "$tmpauth"|awk -F'sub":"' '{print $2}'|awk -F'"' '{print $1}')
+  local user=$(echo "$tmpauth" | awk -F'sub":"' '{print $2}' | awk -F'"' '{print $1}')
   unset tmpauth
   if ! [[ "$user" ]]; then
-    echo -e '\E[37;31m'"\033[1m[error]\033[0m" "Error validating login token.\nCheck/set your auth and try again"
+    echo -e '\E[37;31m'"\033[1m[error]\033[0m" "Error validating login token.\nCheck/set your auth and try again" >&2
     (($verbose)) && echo -e "\e[0;36m""Exiting""\e[m"
   else
     if ! (($quiet)); then
@@ -268,100 +359,125 @@ VALIDTOKEN(){
 REGISTER(){
   CONFIG
   source "$config"
-  cookie="${dotdir}/${handle}.cookie"
-  [[ -f "$cookie" ]] || (touch "$cookie" && chmod 600 "$cookie")
-  if ! [[ "$clientname" ]]; then
-      echo "Registering script"
-      clientname="$(basename $0)_$handle"
-      ! (($quiet)) && (($verbose)) && echo -e "\e[0;36m""clientname = $clientname""\e[m\n"
-      tempfile=$(mktemp /tmp/pwtemp.XXXXXX)
-      chmod 600 "$tempfile"
-      curl -ks -H "User-Agent: $useragent" "${pod}"/api/openid_connect/clients -d "redirect_uris[]=${pod}/&client_name=$clientname" >"$tempfile"
-      clientid=$(cat "$tempfile" | awk -F'client_id":"' '{print $2}' | awk -F'"' '{print $1}')
-      clientsecret=$(cat "$tempfile" | awk -F'client_secret":"' '{print $2}' | awk -F'"' '{print $1}')
-      if ! (($quiet)) && (($verbose)); then
-        echo -e "\e[0;36m""clientid = $clientid""\e[m\n"
-        echo -e "\e[0;36m""clientsecret = $clientsecret""\e[m\n"
-      fi
-      csrf=$(curl -ks -H "User-Agent: $useragent" -L "${pod}"/api/openid_connect/authorizations/new?client_id=${clientid}\&redirect_uri=${pod}/\&response_type=code\&scope=openid%20read%20write\&nonce=hi\&state=hi --cookie-jar "$cookie"|tr '\n' ' '|awk -F'block-form' '{print $2}'|awk -F'authenticity_token" value="' '{print $2}'|awk -F'"' '{print $1}')
-      ! (($quiet)) && (($verbose)) && echo -e "\e[0;36m""csrf = $csrf""\e[m\n"
-      echo "clientname=\"$clientname\"">>"$config"
-      echo "clientid=\"$clientid\"">>"$config"
-      echo "clientsecret=\"$clientsecret\"">>"$config"
-      echo "csrf=\"$csrf\"">>"$config"
-      /bin/rm -f "$tempfile"
-      if ! [[ "$password" ]]; then
-        echo -e '\E[37;34m'"\033[1m[notice]\033[0m" "This will be the only time you will be asked for your password"
-        echo "Your password will be stored plain in config file"
-        PASSWORD
-      fi
-      sed -i '/password=/d' "$config"
-      echo password=\"$(sed 's/\"/\\"/g'<<<"$password")\">>"$config"
-      #'
-      if (($verbose)); then
-        echo -e "\e[0;36m""Password have been saved to $config""\e[m"
-      fi
-      authtoken=$(curl -ks -H "User-Agent: $useragent" -L -H "X-CSRF-TOKEN: $csrf" -d "user[username]=${username}&user[password]=${password}&user[remember_me]=1" "${pod}"/users/sign_in --cookie-jar "$cookie" --cookie "$cookie"|tr '\n' ' '|awk -F'authenticity_token" value="' '{print $2}'|awk -F'"' '{print $1}')
-      unset password
-      ! (($quiet)) && (($verbose)) && echo -e "\e[0;36m""authtoken = $authtoken""\e[m\n"
-      authcode=$(curl -ks -H "User-Agent: $useragent" -H "X-CSRF-TOKEN: $authtoken" -d "approve=true" "${pod}"/api/openid_connect/authorizations --cookie-jar "$cookie" --cookie "$cookie"|awk -F'code=' '{print $2}'|awk -F'"' '{print $1}'|awk -F'&' '{print $1}')
-      ! (($quiet)) && (($verbose)) && echo -e "\e[0;36m""authcode = $authcode""\e[m\n"
-      echo "authtoken=\"$authtoken\"">>"$config"
-      echo "authcode=\"$authcode\"">>"$config"
-      source "$config"
-      TOKENS
-      source "$config"
-      VALIDTOKEN
-      if [[ "$accesstoken" ]]; then
-          if ! (($quiet)); then
-            echo -e '\E[37;32m'"\033[1m[success]\033[0m" "Config updated"
-          fi
-        else
-          echo -e '\E[37;31m'"\033[1m[error]\033[0m" "Did not recieve an access token"
-          (($verbose)) && echo -e "\e[0;36m""Exiting""\e[m"
-          exit 1
-      fi
-      unset csrf authtoken authcode accesstoken
-  else
-    echo -e '\E[37;31m'"\033[1m[error]\033[0m" "Script appears to be registered previously"
-    (($verbose)) && echo -e "\e[0;36m""Exiting""\e[m"
-    exit 1
-  fi
+  # cookie="${confdir}/${handle}.cookie"
+  # [[ -f "$cookie" ]] || (touch "$cookie" && chmod 600 "$cookie")
+    echo "Registering script"
+    clientname="$(basename "$0")_$handle"
+    ! (($quiet)) && (($verbose)) && echo -e "\e[0;36m""clientname = $clientname""\e[m\n"
+    local tempfile=$(mktemp /tmp/pwtemp.XXXXXX)
+    [[ -f "$tempfile" ]] && chmod 600 "$tempfile"
+    curl -ksS \
+    -H "User-Agent: $useragent" \
+    "${pod}"/api/openid_connect/clients \
+    -d "redirect_uris[]=${pod}/&client_name=$clientname" >"$tempfile"
+    clientid=$(awk -F'client_id":"' '{print $2}' "$tempfile" | awk -F'"' '{print $1}')
+    clientsecret=$(awk -F'client_secret":"' '{print $2}' "$tempfile" | awk -F'"' '{print $1}')
+    if ! (($quiet)) && (($verbose)); then
+      echo -e "\e[0;36m""clientid = $clientid""\e[m\n"
+      echo -e "\e[0;36m""clientsecret = $clientsecret""\e[m\n"
+    fi
+    csrf=$(curl -ksS -L \
+      -H "User-Agent: $useragent" \
+      "${pod}"/api/openid_connect/authorizations/new?client_id=${clientid}\&redirect_uri=${pod}/\&response_type=code\&scope=openid%20read%20write\&nonce=hi\&state=hi \
+      --cookie-jar "${confdir}/$cookie" | tr '\n' ' ' | awk -F'block-form' '{print $2}' | awk -F'authenticity_token" value="' '{print $2}' | awk -F'"' '{print $1}')
+    ! (($quiet)) && (($verbose)) && echo -e "\e[0;36m""csrf = $csrf""\e[m\n"
+    echo "clientname=\"$clientname\"">>"$config"
+    echo "clientid=\"$clientid\"">>"$config"
+    echo "clientsecret=\"$clientsecret\"">>"$config"
+    echo "csrf=\"$csrf\"">>"$config"
+    /bin/rm -f "$tempfile"
+    if ! [[ "$password" ]]; then
+      echo -e '\E[37;34m'"\033[1m[notice]\033[0m" "This will be the only time you will be asked for your password"
+      echo "Your password will be stored plain in config file"
+      PASSWORD
+    fi
+    sed -i '/password=/d' "$config"
+    echo password=\"$(sed 's/\"/\\"/g'<<<"$password")\">>"$config"
+    #'
+    if (($verbose)); then
+      echo -e "\e[0;36m""Password have been saved to $config""\e[m"
+    fi
+    authtoken=$(curl -ksS -L \
+      -H "User-Agent: $useragent" \
+      -H "X-CSRF-TOKEN: $csrf" \
+      -d "user[username]=${username}&user[password]=${password}&user[remember_me]=1" \
+      "${pod}"/users/sign_in \
+      --cookie-jar "${confdir}/$cookie" --cookie "${confdir}/$cookie" | tr '\n' ' ' | awk -F'authenticity_token" value="' '{print $2}' | awk -F'"' '{print $1}')
+    unset password
+    ! (($quiet)) && (($verbose)) && echo -e "\e[0;36m""authtoken = $authtoken""\e[m\n"
+    authcode=$(curl -ksS \
+      -H "User-Agent: $useragent" \
+      -H "X-CSRF-TOKEN: $authtoken" \
+      -d "approve=true" \
+      "${pod}"/api/openid_connect/authorizations \
+      --cookie-jar "${confdir}/$cookie" --cookie "${confdir}/$cookie" | awk -F'code=' '{print $2}' | awk -F'"' '{print $1}' | awk -F'&' '{print $1}')
+    ! (($quiet)) && (($verbose)) && echo -e "\e[0;36m""authcode = $authcode""\e[m\n"
+    echo "authtoken=\"$authtoken\"">>"$config"
+    echo "authcode=\"$authcode\"">>"$config"
+    source "$config"
+    TOKENS
+    source "$config"
+    VALIDTOKEN
+    if [[ "$accesstoken" ]]; then
+        if ! (($quiet)); then
+          (($verbose)) && echo -e '\E[37;32m'"\033[1m[success]\033[0m" "Config updated"
+        fi
+      else
+        echo -e '\E[37;31m'"\033[1m[error]\033[0m" "Did not recieve an access token"
+        (($verbose)) && echo -e "\e[0;36m""Exiting""\e[m"
+        exit 1
+    fi
+    unset csrf authtoken authcode accesstoken
 }
 
 GETPOST(){
   VALIDTOKEN
-  post=$(curl -ks -H "User-Agent: $useragent" -H "Authorization: Bearer $accesstoken" -H "X-CSRF-TOKEN: $authtoken" -H "Content-Type: application/json" -H 'Accept: application/json' "${pod}"/posts/"${postid}".json --cookie-jar "$cookie" --cookie "$cookie")
-  unset password csrf authtoken authcode accesstoken
-  error=$(echo "$post"|grep '{"error')
+  local post=$(mktemp /tmp/dipost.XXXXXX)
+  (($verbose)) && echo -e "\e[0;36m""Getting post ${postid}...""\e[m"
+  curl -ksS \
+    -H "User-Agent: $useragent" \
+    -H "Authorization: Bearer $accesstoken" \
+    -H "X-CSRF-TOKEN: $authtoken" \
+    -H "Content-Type: application/json" \
+    -H 'Accept: application/json' \
+    "${pod}/posts/${postid}.json" \
+    --cookie-jar "${confdir}/$cookie" --cookie "${confdir}/$cookie" >"$post"
+  unset password csrf authtoken authcode accesstoken idtoken
+  local error=$(grep '{"error' "$post")
   if [[ "$error" ]]; then
-    echo -e '\E[37;31m'"\033[1m[error]\033[0m" "Did not recieve post"
+    echo -e '\E[37;31m'"\033[1m[error]\033[0m" "Did not recieve post" >&2
     if (($verbose)); then
-      echo -e "\e[0;36m""$error""\e[m"
+      echo -e "\e[0;36m""$error""\e[m" >&2
       echo -e "\e[0;36m""Exiting""\e[m"
     fi
     exit 1
   fi
-  # pid=$(echo -n "$post"|jq -r '.id')
-  pguid=$(echo -n "$post"|jq -r '.guid')
-  posturl="${pod}/posts/$pguid"
-  author=$(echo -n "$post"|jq -r '.author.name')
-  echo -e "\e[0;36m""${author}:""\e[m\n"
-  ptxt=$(echo -n "$post"|jq -r '.text')
+  local postlength=$(wc -m "$post"|cut -d ' ' -f 1)
+  if (($postlength)); then
+    # pid=$("$jq" -r '.id' "$post")
+    local pguid=$("$jq" -r '.guid' "$post")
+    local posturl="${pod}/posts/$pguid"
+    local author=$("$jq" -r '.author.name' "$post")
+    local authorhandle=$("$jq" -r '.author.diaspora_id' "$post")
+    echo -en "\e[0;36m""${author}"; (($verbose)) && echo -n " (${authorhandle})"; echo -e ":\e[m\n"
+    local ptxt=$("$jq" -r '.text' "$post")
+  fi
   if [[ "$pguid" ]]; then
     echo "$ptxt"
     if ! (($quiet)); then
-        echo -e "\n\e[0;36m""post url: $posturl""\e[m"
+      echo -e "\n\e[0;36m""post url: $posturl""\e[m"
     fi
   else
-    echo -e '\E[37;31m'"\033[1m[error]\033[0m" "No post returned, please try again or give up"
-        (($verbose)) && echo -e "\e[0;36m""Exiting""\e[m"
-        exit 1
+    echo -e '\E[37;31m'"\033[1m[error]\033[0m" "No post returned, please try again or give up" >&2
+    (($verbose)) && echo -e "\e[0;36m""Exiting""\e[m"
+    exit 1
   fi
+  /bin/rm -f "$post"
 }
 
 POST(){
   VALIDTOKEN
+  local post=$(mktemp /tmp/hzpost.XXXXXX)
   jsonstart='{"status_message": {"text": "'
   if [[ "$aspectoveride" ]]; then
     aspect="$aspectoveride"
@@ -369,68 +485,85 @@ POST(){
   jsonend='"},"aspect_ids":"'"$aspect"'"}'
   postfile=$(mktemp /tmp/dipost.XXXXXX)
   message=$(mktemp /tmp/dimessage.XXXXXX)
-  chmod 600 "$postfile" "$message"
-  echo -n "$jsonstart">"$postfile"
+  [[ -f "$postfile" && -f "$message" ]] && chmod 600 "$postfile" "$message"
+  echo -n "$jsonstart" >"$postfile"
   if ! [[ -t 0 ]] || (($stdin)); then
       eval 'stdin=$(cat); echo "$stdin"' >"$message"
   else
       $EDITOR "$message"
   fi
-  ## Remove leading blank lines & trailing double spaces on none blank lines
+  ## Delete leading blank lines
+  ## & trailing double spaces on none blank lines (Diaspora markdown uses hard line breaks)
   sed -i '/./,$!d; s/\(.\+\)[[:space:]]\{2\}$/\1/g' "$message"
 
-  msglength=$(cat "$message"|wc -m)
+  msglength=$(wc -m "$message"|cut -d ' ' -f 1)
   if ! (($msglength)); then
-    echo -e '\E[37;31m'"\033[1m[error]\033[0m" "The message is empty. Not posting message"
-    echo "Not deleting the file \"$message\" in case it is not empty"
+    echo -e '\E[37;31m'"\033[1m[error]\033[0m" "The message is empty. Not posting message" >&2
+    echo "Not deleting the file \"$message\" in case it is not empty" >&2
     /bin/rm -f "$postfile"
     (($verbose)) && echo -e "\e[0;36m""Exiting""\e[m"
     exit 1
   fi
-  cat "$message"|sed 's/\\/\\\\/g; s/\"/\\"/g; s/\($\)/\1\\r\\n/g'|tr -d "\n"|sed 's/\\r\\n$//'>>"$postfile"
-  echo -n "$jsonend">>"$postfile"
-  post=$(curl -ks -H "User-Agent: $useragent" -H "Authorization: Bearer $accesstoken" -H "X-CSRF-TOKEN: $authtoken" -H "Content-Type: application/json" -H 'Accept: application/json' -X POST -d @"$postfile" "${pod}"/status_messages --cookie-jar "$cookie" --cookie "$cookie")
-  unset password csrf authtoken authcode accesstoken
-  pid=$(echo -n "$post"|jq -r '.id')
-  pguid=$(echo -n "$post"|jq -r '.guid')
-  if [[ "$pguid" ]]; then
+  sed 's/\\/\\\\/g; s/\"/\\"/g; s/\($\)/\1\\r\\n/g' "$message" | tr -d "\n" | sed 's/\\r\\n$//'>>"$postfile"
+  echo -n "$jsonend" >>"$postfile"
+  (($verbose)) && echo -e "\e[0;36m""Posting...""\e[m"
+  curl -ksS \
+    -H "User-Agent: $useragent" \
+    -H "Authorization: Bearer $accesstoken" \
+    -H "X-CSRF-TOKEN: $authtoken" \
+    -H "Content-Type: application/json" \
+    -H 'Accept: application/json' \
+    -X POST \
+    -d @"$postfile" \
+    "${pod}/status_messages" \
+    --cookie-jar "${confdir}/$cookie" --cookie "${confdir}/$cookie" >"$post"
+  unset password csrf authtoken authcode accesstoken idtoken
+  local pid=$("$jq" -r '.id' "$post")
+  local pguid=$("$jq" -r '.guid' "$post")
+  if [[ "$pid" || "$pguid" ]]; then
     if ! (($quiet)); then
-        # echo -e '\E[37;32m'"\033[1m[success]\033[0m" "Message posted at ${pod}/posts/$pguid"
-        echo -e '\E[37;32m'"\033[1m[success]\033[0m" "Message "$pid" posted"
-        echo -en "\e[0;36m""post url: ""\e[m"
+      if [[ "$pid" ]]; then
+        local id="$pid"
+      elif [[ "$pguid" ]]; then
+        local id="$pguid"
+      fi
+      # echo -e '\E[37;32m'"\033[1m[success]\033[0m" "Message posted at ${pod}/posts/$pguid"
+      echo -e '\E[37;32m'"\033[1m[success]\033[0m" "Message "$id" posted"
+      echo -en "\e[0;36m""post url: ""\e[m"
     fi
     echo -e "\e[0;36m""${pod}/posts/$pguid""\e[m"
     /bin/rm -f "$postfile" "$message"
   else
-    echo -e '\E[37;31m'"\033[1m[error]\033[0m" "No post guid returned, please try again or give up"
-    echo "Message should still be saved in the file $message"
+    echo -e '\E[37;31m'"\033[1m[error]\033[0m" "No post guid returned, please try again or give up" >&2
+    echo "Message should still be saved in the file $message" >&2
     /bin/rm -f "$postfile"
     if (($verbose)); then
-      echo -e "\e[0;36m""$post""\e[m"
+      ! (($quiet)) && echo -e "\e[0;36m" && cat "$post" && "\e[m" >&2
       echo -e "\e[0;36m""Exiting""\e[m"
     fi
     exit 1
   fi
+  /bin/rm -f "$post"
 }
 
 # DELETE CONFIG & COOKIE
 DELETE(){
     CONFIG
-  ! (($quiet)) && echo Deleting: cookie: "${dotdir}/${handle}.cookie", config: "$config"
-  [[ "$dotdir" && "$handle" ]] && [[ -f "${dotdir}/${handle}.cookie" ]] && /bin/rm -f "${dotdir}/${handle}.cookie"
+  ! (($quiet)) && echo Deleting: cookie: "${confdir}/$cookie", config: "$config"
+  [[ "$confdir" && "$handle" ]] && [[ -f "${confdir}/${handle}.cookie" ]] && /bin/rm -f "${confdir}/${handle}.cookie"
   [[ "$config" ]] && [[ -f "$config" ]] && /bin/rm -f "$config"
 }
 
 if [[ $# -lt 1 ]]; then
-    POST
     exe=1
+    POST
 elif [[ "$1" == '--help' ]]; then
     USAGE
     exit 0
 fi
 
 # RUN OPTIONS
-while getopts "a:c:Dg:hipqrsS:u:v" OPTION
+while getopts "a:c:d:Dg:hipqrsS:u:v" OPTION
 do
   case $OPTION in
     a)
@@ -444,36 +577,44 @@ do
         custconfig=1
       fi
       ;;
+    d)
+      if [[ "$OPTARG" ]]; then
+        config="$OPTARG"
+        custconfig=1
+      fi
+      setdefconf=1
+      ;;
     D)
-      DELETE
       exe=1
+      DELETE
       ;;
     g)
+      exe=1
       postid="$OPTARG"
       GETPOST
-      exe=1
       ;;
     h)
-      USAGE
       exe=1
+      USAGE
       ;;
     i)
       stdin=1
       ;;
     p)
-      POST
       exe=1
+      POST
       ;;
     q)
       quiet=1
       ;;
     r)
-      VALIDTOKEN
       exe=1
+      VALIDTOKEN
       ;;
     s)
-      REGISTER
       exe=1
+      setnew=1
+      REGISTER
       ;;
     S)
       sslarg="$OPTARG"
@@ -512,22 +653,32 @@ do
     v)
       verbose=1
       ;;
+    \?)
+      # echo -e '\e[37;34m'"\e[1m[notice]\e[0m" "Invalid option: -$OPTARG" >&2
+      echo -e '\e[37;34m'"\e[1m[notice]\e[0m" "Invalid option" >&2
+      (($verbose)) && echo -e "\e[0;36m""Exiting""\e[m"
+      exit 1
+      ;;
+    :)
+      echo -e '\e[37;34m'"\e[1m[notice]\e[0m" "Option -$OPTARG requires an argument" >&2
+      (($verbose)) && echo -e "\e[0;36m""Exiting""\e[m"
+      exit 1
+      ;;
+
   esac
 done
 shift $(($OPTIND -1))
 
 ## Post if no other functional commands was given
 if ! (($exe)); then
-  POST
   exe=1
+  POST
 fi
 
 exit 0
 
 ### TODO:
-# succes pid
 # inline auth
-# message size limit (bash var)
 # use keyring
 # delete post
 # comment post
@@ -540,4 +691,3 @@ exit 0
 # debug
 # version option
 # more errors handle
-# >&2
