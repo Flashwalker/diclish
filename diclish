@@ -115,20 +115,24 @@ CONFIG(){
     echo -e '\E[37;34m'"\033[1m[notice]\033[0m Creating new config file:"
     read -p "What is your Diaspora* handle? (user@pod.example.com): " handle
     if ! (($sslsetted)); then
-      IFSSL(){
-        read -p "Does your hub use SSL? (y/n) " sslresponse
-      }
-      IFSSL
-      if [[ $sslresponse == [Nn] ]]; then
+      validsslres=0
+      sslres=y
+      while ! (($validsslres)); do
+        read -n 1 -p "Does your pod use SSL? (Y/n): " sslres
+        if [[ "${sslres,,}" == [Nn] ]]; then
+          validsslres=1
           ssl=0
           pod="http://${handle##*@}"
-      elif [[ $sslresponse == [Yy] ]]; then
+        elif [[ "${sslres,,}" == [Yy] || -z "$sslres" ]]; then
+          validsslres=1
           ssl=1
           pod="https://${handle##*@}"
-      else
-          echo "Response not valid, please answer y or n"
-          IFSSL
-      fi
+        else
+          validsslres=0
+          echo -e "\e[0;31m\nResponse not valid, please answer y or n\e[m"
+        fi
+      done
+      echo
     fi
     if (($ssl)); then
         pod="https://${handle##*@}"
